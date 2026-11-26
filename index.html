@@ -231,12 +231,10 @@
        STAGE 7  — TRY YOUR OWN
     ══════════════════════════════════════════════ */
     .try-own-section {
-      display: none;
       margin-top: 1.5rem;
       border-top: 2px solid #f1f5f9;
       padding-top: 1.2rem;
     }
-    .try-own-section.visible { display: block; }
 
     .try-own-heading {
       font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-bottom: 0.9rem;
@@ -948,7 +946,7 @@ function draw3DPlot(points, sentences, chartEl, highlightIdx = -1) {
     });
   }
 
-  // Highlight trace — the "try your own" sentence (orange diamond, bigger)
+  // Highlight trace — the "try your own" sentence (bigger orange dot)
   if (highlightIdx >= 0 && highlightIdx < points.length) {
     traces.push({
       type: 'scatter3d',
@@ -962,8 +960,7 @@ function draw3DPlot(points, sentences, chartEl, highlightIdx = -1) {
       textposition: 'top center',
       marker: {
         size: 16,
-        color: '#f97316',          // orange
-        symbol: 'diamond',
+        color: '#f97316',          // orange dot
         opacity: 1,
         line: { width: 2, color: '#fff' },
       },
@@ -1207,15 +1204,19 @@ document.getElementById('btn-build-vocab').addEventListener('click', function ()
 document.getElementById('btn-try-own').addEventListener('click', async function () {
   const sentence = document.getElementById('try-own-input').value.trim();
   if (!sentence) return;
+
+  // Auto-build vocabulary if not yet done
+  if (fullSortedWords.length === 0) {
+    document.getElementById('btn-build-vocab').click();
+  }
+
+  // Auto-embed initial sentences if not yet plotted
   if (currentSentences.length === 0) {
-    alert('Click "Embed and Plot" first so there is a chart to add to.');
-    return;
+    document.getElementById('btn-embed').click();
   }
 
   // ── 1. Token chips (reuse renderChipsInto) ──
-  if (fullSortedWords.length > 0) {
-    renderChipsInto(document.getElementById('try-own-chips'), sentence);
-  }
+  renderChipsInto(document.getElementById('try-own-chips'), sentence);
 
   // ── 2. Embed (reuse spellingEmbed or the cached meaning extractor) ──
   let embedding;
@@ -1236,15 +1237,7 @@ document.getElementById('btn-try-own').addEventListener('click', async function 
     ).join('') + '<span class="vp-ellipsis">…</span>';
   vpEl.classList.add('visible');
 
-  // ── 4. Redraw chart: original sentences + new one (reuse draw3DPlot) ──
-  const allSentences  = [...currentSentences, sentence];
-  const allEmbeddings = [...currentEmbeddings, embedding];
-  const highlightIdx  = allSentences.length - 1;
-  const allPoints     = allEmbeddings.map(e => projectTo3D(e));  // reuse projectTo3D
-
-  draw3DPlot(allPoints, allSentences, document.getElementById('chart-area'), highlightIdx);
-
-  // ── 5. Find 3 closest from the existing set (reuse dot) ──
+  // ── 4. Find 3 closest from the existing set (reuse dot) ──
   const scored = currentEmbeddings.map((e, i) => ({
     score:    dot(e, embedding),    // reuse dot (cosine sim of unit vectors)
     sentence: currentSentences[i],
@@ -1253,7 +1246,7 @@ document.getElementById('btn-try-own').addEventListener('click', async function 
 
   const tcEl = document.getElementById('try-own-closest');
   tcEl.innerHTML =
-    `<p class="toc-label">3 closest existing sentences</p>` +
+    `<p class="toc-label">3 closest sentences</p>` +
     scored.slice(0, 3).map((item, i) => `
       <div class="toc-row">
         <span class="toc-rank">${i + 1}</span>
@@ -1261,6 +1254,23 @@ document.getElementById('btn-try-own').addEventListener('click', async function 
         <span class="toc-text">${escapeHtml(item.sentence)}</span>
       </div>`).join('');
   tcEl.classList.add('visible');
+
+  // ── 5. Add to sentence list (textarea and internal state), then redraw chart ──
+  const sentencesTextarea = document.getElementById('embedding-sentences');
+  if (sentencesTextarea) {
+    const currentVal = sentencesTextarea.value.trim();
+    const existingList = currentVal.split('\n').map(s => s.trim());
+    if (!existingList.includes(sentence)) {
+      sentencesTextarea.value = currentVal ? currentVal + '\n' + sentence : sentence;
+    }
+  }
+
+  currentSentences.push(sentence);
+  currentEmbeddings.push(embedding);
+  const highlightIdx = currentSentences.length - 1;
+  const allPoints    = currentEmbeddings.map(e => projectTo3D(e));  // reuse projectTo3D
+
+  draw3DPlot(allPoints, currentSentences, document.getElementById('chart-area'), highlightIdx);
 
   console.log(`Stage 7: added "${sentence}" to plot (highlightIdx ${highlightIdx})`);
 });
