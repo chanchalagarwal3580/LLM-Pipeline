@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Pipeline Explorer</title>
+
+  <!-- Plotly 3.3.0 — 3D scatter chart for embeddings -->
+  <script src="https://cdn.plot.ly/plotly-3.3.0.min.js" charset="utf-8"></script>
+
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f4f8;
+      color: #1e293b;
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .page-wrapper { max-width: 1000px; margin: 0 auto; }
+
+    /* ── Page title ── */
+    .page-title { text-align: center; margin-bottom: 2.5rem; }
+    .page-title h1 {
+      font-size: 2.2rem; font-weight: 800; color: #1e293b; letter-spacing: -0.5px;
+    }
+    .page-title h1 span { color: #4f46e5; }
+    .page-title p { margin-top: 0.5rem; color: #64748b; font-size: 1rem; }
+
+    /* ── Section card ── */
+    .section-card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 16px;
+      padding: 2rem 2rem 2.2rem; margin-bottom: 2rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .section-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #f1f5f9;
+    }
+    .section-badge {
+      background: #4f46e5; color: #fff; font-size: 0.75rem; font-weight: 700;
+      padding: 0.25rem 0.65rem; border-radius: 999px; white-space: nowrap;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .section-header h2 { font-size: 1.25rem; font-weight: 700; color: #1e293b; }
+    .section-header .section-desc {
+      margin-left: auto; font-size: 0.82rem; color: #64748b; font-style: italic;
+    }
+
+    /* ── Two-column grid ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 640px) {
+      .two-col { grid-template-columns: 1fr; }
+      .section-header .section-desc { display: none; }
+    }
+
+    /* ── Labels ── */
+    label {
+      display: block; font-size: 0.82rem; font-weight: 600; color: #475569;
+      margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.4px;
+    }
+
+    /* ── Textareas ── */
+    textarea {
+      width: 100%; border: 1.5px solid #cbd5e1; border-radius: 8px;
+      padding: 0.7rem 0.85rem; font-size: 0.92rem; font-family: inherit;
+      color: #1e293b; background: #f8fafc; resize: vertical;
+      transition: border-color 0.15s; line-height: 1.55;
+    }
+    textarea:focus { outline: none; border-color: #4f46e5; background: #fff; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      margin-top: 0.9rem; padding: 0.6rem 1.3rem;
+      background: #4f46e5; color: #fff; border: none; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #4338ca; }
+
+    /* ── Radio group ── */
+    .radio-group { display: flex; gap: 1.5rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+    .radio-group label {
+      display: flex; align-items: center; gap: 0.4rem;
+      text-transform: none; letter-spacing: 0; font-size: 0.92rem;
+      font-weight: 500; color: #334155; cursor: pointer;
+    }
+    .radio-group input[type="radio"] { accent-color: #4f46e5; width: 1rem; height: 1rem; }
+
+    .field + .field { margin-top: 1.1rem; }
+    .col-divider { display: flex; flex-direction: column; gap: 1.1rem; }
+
+    /* ══════════════════════════════════════════════
+       PART 1  — VOCABULARY OUTPUT TABLE
+    ══════════════════════════════════════════════ */
+    .vocab-output { margin-top: 1.4rem; border-top: 2px solid #f1f5f9; padding-top: 1.2rem; display: none; }
+    .vocab-output.visible { display: block; }
+
+    .vocab-meta { font-size: 0.85rem; color: #475569; margin-bottom: 0.75rem; }
+    .vocab-meta strong { color: #4f46e5; font-size: 1rem; }
+
+    .vocab-table-wrap { max-height: 200px; overflow-y: auto; border: 1.5px solid #e2e8f0; border-radius: 8px; }
+    .vocab-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .vocab-table thead th {
+      position: sticky; top: 0; background: #f1f5f9; color: #475569;
+      text-align: left; padding: 0.5rem 0.9rem; font-weight: 700;
+      font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1.5px solid #e2e8f0;
+    }
+    .vocab-table tbody tr:nth-child(even) { background: #f8fafc; }
+    .vocab-table tbody tr:hover           { background: #ede9fe; }
+    .vocab-table td {
+      padding: 0.42rem 0.9rem; border-bottom: 1px solid #f1f5f9; color: #334155;
+    }
+    .vocab-table td:first-child  { font-family: monospace; color: #7c3aed; font-weight: 700; }
+    .vocab-table td:nth-child(2) { font-family: monospace; font-weight: 600; }
+    .vocab-table tr.unk-row td { color: #ef4444; }
+
+    /* ══════════════════════════════════════════════
+       STAGE 6  — VOCABULARY SLIDER
+    ══════════════════════════════════════════════ */
+    .vocab-slider-section {
+      display: none;                     /* hidden until vocab is built */
+      margin-top: 1rem;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+    }
+    .vocab-slider-section.visible { display: block; }
+
+    .slider-label-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 0.4rem;
+    }
+    .slider-label-row .slider-title {
+      font-size: 0.82rem; font-weight: 600; color: #475569;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .slider-label-row .slider-value {
+      font-size: 0.88rem; color: #4f46e5; font-weight: 700; font-family: monospace;
+    }
+
+    input[type="range"] {
+      width: 100%; accent-color: #4f46e5; cursor: pointer; height: 4px;
+    }
+
+    .slider-hint { font-size: 0.76rem; color: #94a3b8; margin-top: 0.35rem; }
+
+    /* ══════════════════════════════════════════════
+       PART 1  — TOKEN CHIPS (Stage 3)
+    ══════════════════════════════════════════════ */
+    .token-output { margin-top: 1rem; display: none; }
+    .token-output.visible { display: block; }
+
+    .token-chips-wrap {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.85rem;
+      background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; min-height: 3rem;
+    }
+
+    .chip {
+      display: flex; flex-direction: column; align-items: center;
+      border-radius: 7px; padding: 0.3rem 0.6rem;
+      border-width: 1.5px; border-style: solid;
+      font-family: monospace; min-width: 2.2rem;
+      transition: transform 0.1s;
+    }
+    .chip:hover { transform: translateY(-2px); }
+    .chip .chip-word { font-size: 0.88rem; font-weight: 700; white-space: nowrap; }
+    .chip .chip-id   { font-size: 0.72rem; opacity: 0.75; margin-top: 2px; }
+
+    .token-stats { display: flex; gap: 1.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+    .token-stat  {
+      background: #f1f5f9; border-radius: 8px; padding: 0.35rem 0.8rem;
+      font-size: 0.82rem; color: #475569;
+    }
+    .token-stat span { font-weight: 700; color: #4f46e5; }
+
+    .unk-note { margin-top: 0.6rem; font-size: 0.8rem; color: #ef4444; display: none; }
+    .unk-note.visible { display: block; }
+
+    /* ══════════════════════════════════════════════
+       PART 2  — DOWNLOAD PROGRESS (Stage 5)
+    ══════════════════════════════════════════════ */
+    .embed-progress {
+      display: none;                   /* shown only during meaning-based download */
+      margin-top: 1rem;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+    }
+    .embed-progress.visible { display: block; }
+
+    .progress-label {
+      font-size: 0.84rem; color: #475569; margin-bottom: 0.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .progress-label span { font-weight: 700; color: #4f46e5; }
+
+    .progress-bar-track {
+      height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; background: linear-gradient(90deg, #6366f1, #38bdf8);
+      border-radius: 999px; width: 0%; transition: width 0.3s;
+    }
+    .progress-status { font-size: 0.78rem; color: #94a3b8; margin-top: 0.4rem; }
+
+    /* ══════════════════════════════════════════════
+       PART 2  — CHART + CLOSEST PAIRS (Stage 5)
+    ══════════════════════════════════════════════ */
+    .chart-area {
+      height: 520px; border: 2px dashed #cbd5e1; border-radius: 12px;
+      background: #f8fafc; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #94a3b8; gap: 0.5rem; margin-top: 1rem; overflow: hidden;
+    }
+    .chart-area .chart-icon { font-size: 3rem; opacity: 0.5; }
+    .chart-area p { font-size: 0.9rem; }
+    .chart-area.has-plot { display: block; border: 1.5px solid #e2e8f0; }
+
+    .chart-msg { text-align: center; padding: 2rem; color: #ef4444; font-size: 0.9rem; }
+
+    /* ══════════════════════════════════════════════
+       STAGE 7  — TRY YOUR OWN
+    ══════════════════════════════════════════════ */
+    .try-own-section {
+      display: none;
+      margin-top: 1.5rem;
+      border-top: 2px solid #f1f5f9;
+      padding-top: 1.2rem;
+    }
+    .try-own-section.visible { display: block; }
+
+    .try-own-heading {
+      font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-bottom: 0.9rem;
+    }
+
+    /* Input row: textarea + button side by side */
+    .try-own-input-row {
+      display: flex; gap: 1rem; align-items: flex-start;
+    }
+    .try-own-input-row textarea { flex: 1; }
+    .try-own-input-row .btn     { margin-top: 0; white-space: nowrap; flex-shrink: 0; }
+
+    /* Chips for the new sentence (reuses .chip from Part 1) */
+    .try-own-chips-wrap {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem;
+      background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px;
+      min-height: 2.5rem; margin-top: 0.75rem;
+    }
+    .try-own-chips-wrap:empty { display: none; }
+
+    /* First 8 numbers of the embedding vector */
+    .vector-preview { margin-top: 0.75rem; display: none; }
+    .vector-preview.visible { display: block; }
+    .vp-label { font-size: 0.8rem; color: #64748b; margin-bottom: 0.4rem; }
+    .vp-numbers { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+    .vp-num {
+      font-family: monospace; font-size: 0.82rem; font-weight: 600;
+      background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+      border-radius: 6px; padding: 0.28rem 0.55rem;
+    }
+    .vp-ellipsis { font-size: 0.82rem; color: #94a3b8; }
+
+    /* 3 closest sentences */
+    .try-own-closest { margin-top: 0.75rem; display: none; }
+    .try-own-closest.visible { display: block; }
+    .toc-label {
+      font-size: 0.78rem; font-weight: 700; color: #475569;
+      text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 0.5rem;
+    }
+    .toc-row {
+      display: flex; align-items: baseline; gap: 0.75rem;
+      padding: 0.42rem 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .toc-row:last-child { border-bottom: none; }
+    .toc-rank  { font-family: monospace; color: #94a3b8; font-size: 0.78rem; min-width: 1.2rem; }
+    .toc-score { font-family: monospace; font-weight: 700; color: #4f46e5; font-size: 0.82rem; white-space: nowrap; }
+    .toc-text  { font-size: 0.88rem; color: #334155; }
+
+    /* Closest-pairs table */
+    .closest-pairs-section {
+      display: none;
+      margin-top: 1.5rem;
+      border-top: 2px solid #f1f5f9;
+      padding-top: 1.2rem;
+    }
+    .closest-pairs-section.visible { display: block; }
+
+    .cp-heading {
+      font-size: 0.95rem; font-weight: 700; color: #1e293b;
+      margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+    }
+    .cp-mode-tag {
+      font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.55rem;
+      border-radius: 999px; background: #ede9fe; color: #6d28d9;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+
+    .cp-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .cp-table thead th {
+      background: #f1f5f9; color: #475569; text-align: left;
+      padding: 0.5rem 0.9rem; font-weight: 700; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.4px;
+      border-bottom: 1.5px solid #e2e8f0;
+    }
+    .cp-table tbody tr:nth-child(even) { background: #f8fafc; }
+    .cp-table tbody tr:hover           { background: #ede9fe; }
+    .cp-table td { padding: 0.5rem 0.9rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .cp-table td:last-child {
+      font-family: monospace; font-weight: 700; color: #4f46e5; text-align: right;
+    }
+
+    /* Score bar inside the table */
+    .score-bar {
+      display: inline-block; height: 6px; border-radius: 999px;
+      background: linear-gradient(90deg, #6366f1, #38bdf8);
+      vertical-align: middle; margin-right: 0.5rem;
+      min-width: 2px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     WHAT THIS DOES:
+     Page title — tells the user what this teaching tool is.
+══════════════════════════════════════════════════════ -->
+<div class="page-wrapper">
+
+  <div class="page-title">
+    <h1><span>LLM</span> Pipeline Explorer</h1>
+    <p>See step-by-step how Large Language Models process text — from raw words to predictions.</p>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       PART 1 — TOKENIZER
+       WHAT THIS DOES:
+       "Build Vocabulary" scans training sentences and builds a
+       lookup table (every word → unique ID).
+       "Tokenize" uses that table to break a new sentence into
+       chips. Unknown words are sub-character-split.
+       Stage 6 slider lets you trim the vocabulary down and
+       watch more words go [UNK] in real time.
+  ════════════════════════════════════════════════════ -->
+  <div class="section-card">
+
+    <div class="section-header">
+      <span class="section-badge">Part 1</span>
+      <h2>🔤 Tokenizer</h2>
+      <span class="section-desc">Both buttons active · slider after build</span>
+    </div>
+
+    <div class="two-col">
+
+      <!-- ── Left: training sentences + vocab output + slider ── -->
+      <div class="col-divider">
+
+        <div class="field">
+          <label for="training-sentences">Training Sentences</label>
+          <textarea id="training-sentences" rows="8">The cat sat on the mat.
+A dog ran in the park.
+The sun sets in the west.
+Birds fly over the river.
+Children play in the garden.
+The wind blows through the trees.</textarea>
+        </div>
+
+        <button class="btn" id="btn-build-vocab">📚 Build Vocabulary</button>
+
+        <!-- Vocabulary table (shown after Build Vocabulary) -->
+        <div class="vocab-output" id="vocab-output">
+          <p class="vocab-meta">
+            Vocabulary size: <strong id="vocab-size">—</strong> tokens
+            <span id="vocab-active-note" style="color:#ef4444; font-size:0.8rem; margin-left:0.5rem;"></span>
+          </p>
+          <div class="vocab-table-wrap">
+            <table class="vocab-table">
+              <thead><tr><th>ID</th><th>Token</th><th>Count</th></tr></thead>
+              <tbody id="vocab-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- ── Stage 6: Words-kept slider ── -->
+          <div class="vocab-slider-section" id="vocab-slider-section">
+            <div class="slider-label-row">
+              <span class="slider-title">Words kept</span>
+              <span class="slider-value" id="slider-value-label">— of —</span>
+            </div>
+            <input type="range" id="vocab-slider" min="1" value="1" />
+            <p class="slider-hint">
+              Drag left → fewer words kept → more [UNK] tokens appear below
+            </p>
+          </div>
+        </div>
+
+      </div><!-- /left col -->
+
+      <!-- ── Right: encode sentence + token chips ── -->
+      <div class="col-divider">
+
+        <div class="field">
+          <label for="encode-sentence">Encode a Sentence</label>
+          <textarea id="encode-sentence" rows="3">The cat chased a butterfly in the garden.</textarea>
+          <small style="color:#94a3b8; font-size:0.78rem; display:block; margin-top:0.4rem;">
+            💡 <em>"butterfly"</em> is not in the training sentences — watch what happens!
+          </small>
+        </div>
+
+        <button class="btn" id="btn-tokenize">🔍 Tokenize</button>
+
+        <!-- Token chips + stats (shown after Tokenize) -->
+        <div class="token-output" id="token-output">
+          <div class="token-chips-wrap" id="token-chips"></div>
+          <p class="unk-note" id="unk-note">
+            ⚠️ Unknown words are broken into single letters — first letter as-is, the rest prefixed with ##
+          </p>
+          <div class="token-stats" id="token-stats"></div>
+        </div>
+
+      </div><!-- /right col -->
+
+    </div><!-- /two-col -->
+  </div><!-- /Part 1 card -->
+
+
+  <!-- ════════════════════════════════════════════════════
+       PART 2 — EMBEDDINGS IN 3D
+       WHAT THIS DOES:
+       Spelling-based: slides a 3-letter window across each
+       sentence, counts patterns into 64 numbers, normalises,
+       then projects to 3D via a random projection.
+       Meaning-based: loads a real sentence-transformer model
+       (Xenova/all-MiniLM-L6-v2) in the browser via
+       transformers.js and uses its 384-dim embeddings.
+       Closest Pairs table (Stage 5): computes cosine similarity
+       on the full vectors (not the 3D projection) for all pairs
+       and shows the top 5 most similar.
+  ════════════════════════════════════════════════════ -->
+  <div class="section-card">
+
+    <div class="section-header">
+      <span class="section-badge">Part 2</span>
+      <h2>📐 Embeddings in 3D</h2>
+      <span class="section-desc">Spelling active · Meaning needs http</span>
+    </div>
+
+    <div class="two-col">
+
+      <!-- Left: sentence list -->
+      <div class="field">
+        <label for="embedding-sentences">Sentences (one per line)</label>
+        <textarea id="embedding-sentences" rows="10">The cat sat on the mat.
+A kitten rested on the rug.
+The bat sat on the mat.
+I love programming in Python.
+Coding in Python is my passion.
+Pythons are large snakes.
+The stock market crashed today.
+Share prices fell sharply.</textarea>
+      </div>
+
+      <!-- Right: mode selector + button -->
+      <div>
+        <label>Embedding Mode</label>
+        <div class="radio-group">
+          <label>
+            <input type="radio" name="embed-mode" value="spelling" checked />
+            🔡 Spelling-based
+          </label>
+          <label>
+            <input type="radio" name="embed-mode" value="meaning" />
+            💡 Meaning-based
+          </label>
+        </div>
+        <p style="font-size:0.85rem; color:#64748b; line-height:1.6; margin-bottom:1rem;">
+          <strong>Spelling-based:</strong> trigrams (every 3-letter window) counted into 64 numbers.<br><br>
+          <strong>Meaning-based:</strong> real neural-network embeddings via
+          <code>Xenova/all-MiniLM-L6-v2</code> — downloads ~23 MB on first use, then cached.
+        </p>
+        <button class="btn" id="btn-embed">🧮 Embed and Plot</button>
+      </div>
+
+    </div><!-- /two-col -->
+
+    <!-- Model download progress bar (meaning-based only) -->
+    <div class="embed-progress" id="embed-progress">
+      <div class="progress-label">
+        <span id="progress-text">Downloading model…</span>
+        <span id="progress-pct">0%</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <p class="progress-status" id="progress-status">Starting…</p>
+    </div>
+
+    <!-- 3D chart -->
+    <div class="chart-area" id="chart-area">
+      <div class="chart-icon">📊</div>
+      <p>3D chart will appear here after you click <strong>Embed and Plot</strong></p>
+    </div>
+
+    <!-- ── Stage 5: Closest Pairs table ── -->
+    <div class="closest-pairs-section" id="closest-pairs-section">
+      <p class="cp-heading">
+        🔗 Closest Pairs
+        <span class="cp-mode-tag" id="cp-mode-tag">spelling</span>
+      </p>
+      <table class="cp-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Sentence A</th>
+            <th>Sentence B</th>
+            <th style="text-align:right;">Cosine similarity</th>
+          </tr>
+        </thead>
+        <tbody id="cp-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- ── Stage 7: Try your own ── -->
+    <div class="try-own-section" id="try-own-section">
+      <p class="try-own-heading">🧪 Try your own word or sentence</p>
+
+      <div class="try-own-input-row">
+        <textarea id="try-own-input" rows="2"
+          placeholder="Type a word or sentence and click the button…">The puppy slept on the sofa.</textarea>
+        <button class="btn" id="btn-try-own">🚀 Tokenize, embed &amp; add to plot</button>
+      </div>
+
+      <!-- Token chips (populated by renderChipsInto) -->
+      <div class="try-own-chips-wrap" id="try-own-chips"></div>
+
+      <!-- First 8 numbers of the embedding vector -->
+      <div class="vector-preview" id="try-own-vector">
+        <p class="vp-label"></p>
+        <div class="vp-numbers"></div>
+      </div>
+
+      <!-- 3 closest existing sentences -->
+      <div class="try-own-closest" id="try-own-closest"></div>
+    </div>
+
+  </div><!-- /Part 2 card -->
+
+</div><!-- /page-wrapper -->
+
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+// STAGE 2 — BUILD VOCABULARY
+//
+// WHAT THIS DOES:
+//   Reads all training sentences, lowercases them, pads punctuation
+//   with spaces so each mark becomes its own token, splits on spaces,
+//   counts frequencies, sorts most-frequent-first, and assigns IDs
+//   (0 = [UNK], then 1, 2, 3…).
+//
+//   After building, it also sets up the Stage 6 slider so the user
+//   can trim the vocabulary and watch more words turn [UNK].
+// ════════════════════════════════════════════════════════════════════
+
+// All vocab entries sorted by frequency (never truncated — ground truth)
+let fullSortedWords = [];
+
+// Active vocabulary — may be a subset after the slider is used
+// { word: { id, count } }
+let vocabulary = {};
+
+// ── Helper: text → array of lowercase tokens ──
+function tokeniseText(text) {
+  let t = text.toLowerCase();
+  t = t.replace(/([.,!?'])/g, ' $1 ');   // pad punctuation
+  return t.split(/\s+/).filter(w => w.length > 0);
+}
+
+// ── Render the vocabulary table from the current `vocabulary` object ──
+function renderVocabTable() {
+  const tbody = document.getElementById('vocab-tbody');
+  tbody.innerHTML = '';
+
+  // [UNK] row
+  const unkRow = document.createElement('tr');
+  unkRow.className = 'unk-row';
+  unkRow.innerHTML = '<td>0</td><td>[UNK]</td><td>—</td>';
+  tbody.appendChild(unkRow);
+
+  // All active words (already in vocabulary, except [UNK])
+  const activeWords = fullSortedWords.filter(w => vocabulary[w]);
+  for (const word of activeWords) {
+    const { id, count } = vocabulary[word];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${id}</td><td>${word}</td><td>${count}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ── Build Vocabulary button ──
+document.getElementById('btn-build-vocab').addEventListener('click', function () {
+  const trainingText = document.getElementById('training-sentences').value;
+  const tokens = tokeniseText(trainingText);
+
+  // Count
+  const counts = {};
+  for (const tok of tokens) counts[tok] = (counts[tok] || 0) + 1;
+
+  // Sort most-frequent first; A-Z tie-break
+  fullSortedWords = Object.keys(counts).sort((a, b) => {
+    return counts[b] !== counts[a]
+      ? counts[b] - counts[a]
+      : a.localeCompare(b);
+  });
+
+  // Build full vocabulary (keep ALL words)
+  vocabulary = { '[UNK]': { id: 0, count: 0 } };
+  fullSortedWords.forEach((w, i) => { vocabulary[w] = { id: i + 1, count: counts[w] }; });
+
+  // Update size label
+  document.getElementById('vocab-size').textContent = fullSortedWords.length + 1;
+  document.getElementById('vocab-active-note').textContent = '';
+
+  // Render table
+  renderVocabTable();
+  document.getElementById('vocab-output').classList.add('visible');
+
+  // ── Stage 6: wire up the slider ──
+  const slider = document.getElementById('vocab-slider');
+  slider.max   = fullSortedWords.length;
+  slider.value = fullSortedWords.length;
+  updateSliderLabel(fullSortedWords.length);
+  document.getElementById('vocab-slider-section').classList.add('visible');
+
+  console.log(`Vocabulary built: ${fullSortedWords.length + 1} tokens`);
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 6 — VOCABULARY SLIDER
+//
+// WHAT THIS DOES:
+//   After the vocabulary is built, a slider appears.
+//   Dragging it left keeps only the top N most-frequent words;
+//   the rest are removed from `vocabulary` and replaced by [UNK].
+//   If a sentence is already tokenized, it re-tokenizes live
+//   so you can watch chips turn red as words disappear.
+// ════════════════════════════════════════════════════════════════════
+
+function updateSliderLabel(n) {
+  document.getElementById('slider-value-label').textContent =
+    `${n} of ${fullSortedWords.length}`;
+}
+
+// Rebuild the active vocabulary keeping only the top N words
+function applyVocabSlider(n) {
+  vocabulary = { '[UNK]': { id: 0, count: 0 } };
+  fullSortedWords.slice(0, n).forEach((w, i) => {
+    vocabulary[w] = { id: i + 1, count: fullSortedWords.indexOf(w) >= 0
+      ? vocabulary['[UNK]']           // placeholder — we re-read from counts below
+      : 0 };
+  });
+
+  // Re-read actual counts from the full sorted list (they were stored there already)
+  // We stored count on the word entry when vocab was first built — reconstruct it
+  fullSortedWords.slice(0, n).forEach((w, i) => {
+    // The count was stored in the initial full vocab before truncation
+    // Re-derive from fullSortedWords order: use a closure-captured counts object
+    vocabulary[w] = { id: i + 1, count: _counts[w] };
+  });
+
+  // Update the vocab size label
+  document.getElementById('vocab-size').textContent = n + 1;
+  document.getElementById('vocab-active-note').textContent =
+    n < fullSortedWords.length
+      ? `(showing top ${n} of ${fullSortedWords.length})`
+      : '';
+
+  renderVocabTable();
+}
+
+// We need to keep the original counts accessible for the slider rebuild
+// so store them in a module-level variable on first build
+let _counts = {};
+
+// ── Stage 7 state: saved after each "Embed and Plot" click ──
+let currentSentences  = [];    // the sentences most recently plotted
+let currentEmbeddings = [];    // their full-dim embedding vectors
+let currentMode       = 'spelling';
+let cachedExtractor   = null;  // transformers.js pipeline, once loaded
+
+// Patch the Build Vocabulary handler to also save _counts:
+(function patchBuildVocab() {
+  const origClick = document.getElementById('btn-build-vocab')
+                             .onclick;   // null, it's via addEventListener
+  // We'll save _counts inside the slider's input handler by reading from vocabulary
+  // at the moment the slider first appears (all words still present).
+  // The slider's 'input' fires after build, so vocabulary is complete.
+  // → Solution: save counts in a separate step inside Build Vocab click.
+  // Rebuilding the click listener cleanly:
+})();
+
+// Override the build button with a new listener that also captures _counts
+// (Remove this trick — instead we save _counts inside the actual build step)
+// → Handled by modifying the Build Vocab listener above. See fix below ↓
+
+document.getElementById('vocab-slider').addEventListener('input', function () {
+  const n = parseInt(this.value);
+  updateSliderLabel(n);
+  applyVocabSlider(n);
+
+  // Live re-tokenize if the token output is currently visible
+  if (document.getElementById('token-output').classList.contains('visible')) {
+    runTokenize();
+  }
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 3 — TOKENIZE A SENTENCE
+//
+// WHAT THIS DOES:
+//   Breaks the encode sentence into tokens using the current
+//   vocabulary.  For unknown words it splits into single characters,
+//   first as-is, rest with "##" prefix. Each token becomes a
+//   coloured chip (colour = function of ID, so same word = same
+//   colour always). Stats show character count, token count,
+//   characters per token.
+// ════════════════════════════════════════════════════════════════════
+
+// Colour for a chip from its ID (golden-angle hue spread)
+function chipColour(id) {
+  if (id === 0) return { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b' };
+  const hue = (id * 137.508) % 360;
+  return {
+    bg:     `hsl(${hue}, 70%, 90%)`,
+    border: `hsl(${hue}, 55%, 68%)`,
+    text:   `hsl(${hue}, 60%, 25%)`,
+  };
+}
+
+// Return one-or-more chip descriptors for a single raw token
+function tokeniseWord(word) {
+  if (vocabulary[word] !== undefined) {
+    return [{ display: word, id: vocabulary[word].id }];
+  }
+  // Unknown word → character-level sub-pieces
+  return [...word].map((ch, i) => ({
+    display: i === 0 ? ch : '##' + ch,
+    id: 0,
+  }));
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Shared chip renderer ──────────────────────────────────────────────
+// WHAT THIS DOES:
+//   Tokenises `sentence`, builds a chip element for every token, and
+//   appends them into `containerEl`.  Returns { chips, hadUnknown }
+//   so callers can show stats or the [UNK] note without duplicating
+//   the chip-building loop.
+//   Both runTokenize (Part 1) and the Stage 7 "try your own" handler
+//   call this single function.
+// ─────────────────────────────────────────────────────────────────────
+function renderChipsInto(containerEl, sentence) {
+  const rawTokens = tokeniseText(sentence);
+  const chips = [];
+  let hadUnknown = false;
+
+  for (const raw of rawTokens) {
+    const pieces = tokeniseWord(raw);
+    if (pieces.some(p => p.id === 0)) hadUnknown = true;
+    chips.push(...pieces);
+  }
+
+  containerEl.innerHTML = '';
+  for (const { display, id } of chips) {
+    const { bg, border, text } = chipColour(id);
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.style.cssText = `background:${bg}; border-color:${border}; color:${text};`;
+    chip.innerHTML =
+      `<span class="chip-word">${escapeHtml(display)}</span>` +
+      `<span class="chip-id">ID ${id}</span>`;
+    containerEl.appendChild(chip);
+  }
+
+  return { chips, hadUnknown };
+}
+
+function runTokenize() {
+  // Auto-build vocabulary if not yet done
+  if (fullSortedWords.length === 0) {
+    document.getElementById('btn-build-vocab').click();
+  }
+
+  const sentence = document.getElementById('encode-sentence').value.trim();
+  if (!sentence) return;
+
+  // Delegate chip rendering to the shared helper
+  const { chips, hadUnknown } =
+    renderChipsInto(document.getElementById('token-chips'), sentence);
+
+  // Unknown-word note
+  const unkNote = document.getElementById('unk-note');
+  hadUnknown ? unkNote.classList.add('visible') : unkNote.classList.remove('visible');
+
+  // Stats
+  const charCount = sentence.replace(/\s/g, '').length;
+  const tokCount  = chips.length;
+  document.getElementById('token-stats').innerHTML = `
+    <div class="token-stat">Characters: <span>${charCount}</span></div>
+    <div class="token-stat">Tokens: <span>${tokCount}</span></div>
+    <div class="token-stat">Chars / token: <span>${(charCount/tokCount).toFixed(2)}</span></div>
+  `;
+
+  document.getElementById('token-output').classList.add('visible');
+}
+
+document.getElementById('btn-tokenize').addEventListener('click', runTokenize);
+
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 4 — SPELLING-BASED EMBEDDING + 3D PLOT
+//
+// WHAT THIS DOES:
+//   For each sentence:
+//     1. Lowercase it.
+//     2. Slide a 3-character window → trigrams.
+//     3. Hash each trigram into one of 64 buckets and count.
+//     4. Normalise the 64 numbers so the vector length = 1.
+//   Reduce 64D → 3D using three fixed perpendicular "rulers"
+//   built by a seeded random number generator (Gram-Schmidt).
+//   Plot with Plotly.js (interactive, rotatable).
+// ════════════════════════════════════════════════════════════════════
+
+// ── Spelling embed: sentence → 64-dim unit vector ──
+function spellingEmbed(sentence) {
+  const text = sentence.toLowerCase();
+  const vec  = new Array(64).fill(0);
+  for (let i = 0; i <= text.length - 3; i++) {
+    const a = text.charCodeAt(i),
+          b = text.charCodeAt(i + 1),
+          c = text.charCodeAt(i + 2);
+    vec[((a * 1543) ^ (b * 97) ^ (c * 29)) & 63] += 1;
+  }
+  const len = Math.sqrt(vec.reduce((s, x) => s + x * x, 0));
+  return len > 0 ? vec.map(x => x / len) : vec;
+}
+
+// ── Seeded LCG RNG ──
+function makeLCG(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xFFFFFFFF; };
+}
+
+function dot(a, b) { return a.reduce((sum, x, i) => sum + x * b[i], 0); }
+
+function normalise(v) {
+  const len = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+  if (len > 0) for (let i = 0; i < v.length; i++) v[i] /= len;
+}
+
+// Build 3 orthonormal basis vectors of length `dim`
+function makeBasis(dim, seed) {
+  const rng  = makeLCG(seed);
+  const vecs = Array.from({ length: 3 }, () =>
+    Array.from({ length: dim }, () => rng() * 2 - 1)
+  );
+  for (let v = 0; v < 3; v++) {
+    for (let u = 0; u < v; u++) {
+      const p = dot(vecs[v], vecs[u]);
+      for (let i = 0; i < dim; i++) vecs[v][i] -= p * vecs[u][i];
+    }
+    normalise(vecs[v]);
+  }
+  return vecs;
+}
+
+const BASIS_64  = makeBasis(64,  42);   // for spelling (64D)
+const BASIS_384 = makeBasis(384, 42);   // for meaning  (384D)
+
+function projectTo3D(vec) {
+  const basis = vec.length === 384 ? BASIS_384 : BASIS_64;
+  return basis.map(b => dot(vec, b));
+}
+
+const PALETTE = [
+  '#6366f1','#f59e0b','#10b981','#ef4444',
+  '#3b82f6','#ec4899','#8b5cf6','#14b8a6'
+];
+
+// ── Draw Plotly 3D scatter (highlightIdx = index of the orange "try-own" dot) ──
+function draw3DPlot(points, sentences, chartEl, highlightIdx = -1) {
+  const shortLabels = sentences.map(s => {
+    const ws = s.split(' ');
+    return ws.length > 4 ? ws.slice(0, 4).join(' ') + '…' : s;
+  });
+
+  const layout = {
+    scene: {
+      xaxis: { title: 'Dim 1', gridcolor: '#e2e8f0' },
+      yaxis: { title: 'Dim 2', gridcolor: '#e2e8f0' },
+      zaxis: { title: 'Dim 3', gridcolor: '#e2e8f0' },
+      bgcolor: '#f8fafc',
+      camera: { eye: { x: 1.5, y: 1.5, z: 1.0 } },
+    },
+    paper_bgcolor: '#f8fafc',
+    margin: { l: 0, r: 0, t: 30, b: 0 },
+    font: { family: "'Segoe UI', system-ui, sans-serif", size: 11, color: '#475569' },
+    showlegend: false,
+  };
+
+  // Indices that are NOT the highlighted point
+  const mainIdxs = sentences.map((_, i) => i).filter(i => i !== highlightIdx);
+
+  const traces = [];
+
+  // Main trace — all original sentences
+  if (mainIdxs.length > 0) {
+    traces.push({
+      type: 'scatter3d',
+      mode: 'markers+text',
+      x: mainIdxs.map(i => points[i][0]),
+      y: mainIdxs.map(i => points[i][1]),
+      z: mainIdxs.map(i => points[i][2]),
+      text: mainIdxs.map(i => shortLabels[i]),
+      hovertext: mainIdxs.map(i => sentences[i]),
+      hoverinfo: 'text',
+      textposition: 'top center',
+      marker: {
+        size: 10,
+        color: mainIdxs.map(i => PALETTE[i % PALETTE.length]),
+        opacity: 0.9,
+        line: { width: 1, color: '#fff' },
+      },
+      textfont: { size: 10, color: '#1e293b' },
+    });
+  }
+
+  // Highlight trace — the "try your own" sentence (orange diamond, bigger)
+  if (highlightIdx >= 0 && highlightIdx < points.length) {
+    traces.push({
+      type: 'scatter3d',
+      mode: 'markers+text',
+      x: [points[highlightIdx][0]],
+      y: [points[highlightIdx][1]],
+      z: [points[highlightIdx][2]],
+      text: [shortLabels[highlightIdx]],
+      hovertext: [sentences[highlightIdx]],
+      hoverinfo: 'text',
+      textposition: 'top center',
+      marker: {
+        size: 16,
+        color: '#f97316',          // orange
+        symbol: 'diamond',
+        opacity: 1,
+        line: { width: 2, color: '#fff' },
+      },
+      textfont: { size: 11, color: '#c2410c' },
+    });
+  }
+
+  chartEl.className = 'chart-area has-plot';
+  chartEl.innerHTML = '';
+  Plotly.newPlot(chartEl, traces, layout, { responsive: true });
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 5A — CLOSEST PAIRS TABLE
+//
+// WHAT THIS DOES:
+//   After embedding, computes cosine similarity for every pair of
+//   sentences using the FULL high-dimensional vectors (not the 3D
+//   projection), then shows the 5 most similar pairs in a table
+//   with a mini bar and 3-decimal score.
+//
+//   Because both spelling and meaning embeddings are normalised to
+//   length 1, cosine similarity is simply the dot product.
+// ════════════════════════════════════════════════════════════════════
+
+function renderClosestPairs(embeddings, sentences, modeLabel) {
+  // Compute every pair's cosine similarity
+  const pairs = [];
+  for (let i = 0; i < sentences.length; i++) {
+    for (let j = i + 1; j < sentences.length; j++) {
+      pairs.push({ i, j, score: dot(embeddings[i], embeddings[j]) });
+    }
+  }
+  pairs.sort((a, b) => b.score - a.score);
+  const top5 = pairs.slice(0, 5);
+
+  const tbody = document.getElementById('cp-tbody');
+  tbody.innerHTML = '';
+
+  for (let rank = 0; rank < top5.length; rank++) {
+    const { i, j, score } = top5[rank];
+    // Score clamped 0–1 for the mini bar width (cosine can be slightly > 1 due to float math)
+    const barWidth = Math.round(Math.max(0, Math.min(score, 1)) * 80);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:#94a3b8; font-family:monospace;">${rank + 1}</td>
+      <td>${escapeHtml(sentences[i])}</td>
+      <td>${escapeHtml(sentences[j])}</td>
+      <td>
+        <span class="score-bar" style="width:${barWidth}px;"></span>
+        ${score.toFixed(3)}
+      </td>`;
+    tbody.appendChild(tr);
+  }
+
+  document.getElementById('cp-mode-tag').textContent = modeLabel;
+  document.getElementById('closest-pairs-section').classList.add('visible');
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 5B — MEANING-BASED EMBEDDINGS (transformers.js)
+//
+// WHAT THIS DOES:
+//   Dynamically imports @xenova/transformers from jsDelivr CDN and
+//   loads the Xenova/all-MiniLM-L6-v2 sentence-transformer model.
+//   Shows a download progress bar while the ~23 MB model downloads
+//   (it is cached by the browser after the first use).
+//   Each sentence is embedded into 384 numbers, then projected to
+//   3D and plotted exactly like the spelling mode.
+//   If anything fails (file:// protocol, network error, etc.) it
+//   shows a fallback message and plots with spelling instead.
+// ════════════════════════════════════════════════════════════════════
+
+// ── Progress bar helpers ──
+function showProgress() {
+  document.getElementById('embed-progress').classList.add('visible');
+}
+function hideProgress() {
+  document.getElementById('embed-progress').classList.remove('visible');
+}
+function setProgress(pct, file, status) {
+  document.getElementById('progress-pct').textContent   = Math.round(pct) + '%';
+  document.getElementById('progress-fill').style.width  = Math.round(pct) + '%';
+  document.getElementById('progress-text').textContent  = `Downloading ${file || 'model'}…`;
+  document.getElementById('progress-status').textContent = status || '';
+}
+function setProgressDone(msg) {
+  document.getElementById('progress-pct').textContent   = '100%';
+  document.getElementById('progress-fill').style.width  = '100%';
+  document.getElementById('progress-text').textContent  = msg || 'Model ready!';
+  document.getElementById('progress-status').textContent = '';
+}
+
+async function runMeaningEmbed(sentences, chartEl) {
+  showProgress();
+  setProgress(0, 'all-MiniLM-L6-v2', 'Importing transformers.js…');
+
+  try {
+    // Dynamic import — works from any <script> in modern browsers
+    const { pipeline } = await import(
+      'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js'
+    );
+
+    setProgress(5, 'all-MiniLM-L6-v2', 'Loading model weights…');
+
+    const extractor = await pipeline(
+      'feature-extraction',
+      'Xenova/all-MiniLM-L6-v2',
+      {
+        progress_callback: (data) => {
+          if (data.status === 'progress') {
+            setProgress(data.progress, data.file, `${data.file}`);
+          }
+          if (data.status === 'done') {
+            setProgress(100, data.file, 'File downloaded ✓');
+          }
+        },
+      }
+    );
+
+    setProgressDone('Model ready — embedding sentences…');
+
+    // Embed all sentences into 384-dim unit vectors
+    const embeddings = [];
+    for (const s of sentences) {
+      const out = await extractor(s, { pooling: 'mean', normalize: true });
+      // out.data is a Float32Array — convert to plain JS array
+      embeddings.push(Array.from(out.data));
+    }
+
+    hideProgress();
+
+    // Save state for Stage 7
+    currentSentences  = sentences;
+    currentEmbeddings = embeddings;
+    currentMode       = 'meaning';
+    cachedExtractor   = extractor;
+
+    // Project to 3D and plot
+    const points = embeddings.map(e => projectTo3D(e));
+    draw3DPlot(points, sentences, chartEl);
+    renderClosestPairs(embeddings, sentences, 'meaning');
+    document.getElementById('try-own-section').classList.add('visible');
+
+    console.log(`Meaning-based: embedded ${sentences.length} sentences (384D)`);
+
+  } catch (err) {
+    console.warn('Meaning-based embedding failed:', err);
+    hideProgress();
+
+    // Show the fallback message inside the chart area
+    chartEl.className = 'chart-area';
+    chartEl.innerHTML = `
+      <div class="chart-msg" style="color:#b45309;">
+        ⚠️ Meaning mode needs the page served over http — using spelling-based instead.
+      </div>`;
+
+    // Brief pause so the user can read the message, then fall back
+    setTimeout(() => {
+      const spEmbs = sentences.map(spellingEmbed);
+      const points = spEmbs.map(e => projectTo3D(e));
+      draw3DPlot(points, sentences, chartEl);
+      renderClosestPairs(spEmbs, sentences, 'spelling (fallback)');
+      currentSentences  = sentences;
+      currentEmbeddings = spEmbs;
+      currentMode       = 'spelling';
+      document.getElementById('try-own-section').classList.add('visible');
+    }, 2000);
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// EMBED AND PLOT BUTTON — dispatches to spelling or meaning
+// ════════════════════════════════════════════════════════════════════
+document.getElementById('btn-embed').addEventListener('click', function () {
+  const mode    = document.querySelector('input[name="embed-mode"]:checked').value;
+  const chartEl = document.getElementById('chart-area');
+
+  const sentences = document.getElementById('embedding-sentences').value
+    .split('\n').map(s => s.trim()).filter(s => s.length > 0);
+
+  if (sentences.length < 4) {
+    chartEl.className = 'chart-area';
+    chartEl.innerHTML =
+      '<div class="chart-msg">⚠️ Please enter at least 4 sentences to generate a meaningful plot.</div>';
+    document.getElementById('closest-pairs-section').classList.remove('visible');
+    return;
+  }
+
+  if (mode === 'meaning') {
+    runMeaningEmbed(sentences, chartEl);
+    return;
+  }
+
+  // ── Spelling mode (synchronous) ──
+  const embeddings = sentences.map(spellingEmbed);
+  const points     = embeddings.map(e => projectTo3D(e));
+  draw3DPlot(points, sentences, chartEl);
+  renderClosestPairs(embeddings, sentences, 'spelling');
+  // Save state for Stage 7
+  currentSentences  = sentences;
+  currentEmbeddings = embeddings;
+  currentMode       = 'spelling';
+  document.getElementById('try-own-section').classList.add('visible');
+  console.log(`Spelling-based: embedded ${sentences.length} sentences`);
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// FIX: Save _counts inside the Build Vocabulary listener so the
+//      slider can reconstruct accurate count values when truncating.
+//      We re-add a listener that runs after the main one.
+// ════════════════════════════════════════════════════════════════════
+document.getElementById('btn-build-vocab').addEventListener('click', function () {
+  // At this point vocabulary has just been (re-)built by the first listener.
+  // Copy the counts out for use by applyVocabSlider().
+  _counts = {};
+  for (const [word, entry] of Object.entries(vocabulary)) {
+    if (word !== '[UNK]') _counts[word] = entry.count;
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 7 — TRY YOUR OWN WORD OR SENTENCE
+//
+// WHAT THIS DOES:
+//   Lets the user type any text and instantly see:
+//     1. Its token chips (reuses renderChipsInto — no code copied).
+//     2. The first 8 numbers of its embedding vector.
+//     3. The 3D chart redrawn with the new point as a bigger
+//        orange diamond (reuses draw3DPlot with highlightIdx).
+//     4. Its 3 nearest existing sentences by cosine similarity
+//        (reuses dot — the same function used everywhere else).
+//   If the meaning-based model is already loaded, the new sentence
+//   is embedded with that; otherwise spelling-based is used.
+// ════════════════════════════════════════════════════════════════════
+
+document.getElementById('btn-try-own').addEventListener('click', async function () {
+  const sentence = document.getElementById('try-own-input').value.trim();
+  if (!sentence) return;
+  if (currentSentences.length === 0) {
+    alert('Click "Embed and Plot" first so there is a chart to add to.');
+    return;
+  }
+
+  // ── 1. Token chips (reuse renderChipsInto) ──
+  if (fullSortedWords.length > 0) {
+    renderChipsInto(document.getElementById('try-own-chips'), sentence);
+  }
+
+  // ── 2. Embed (reuse spellingEmbed or the cached meaning extractor) ──
+  let embedding;
+  if (currentMode === 'meaning' && cachedExtractor) {
+    const out = await cachedExtractor(sentence, { pooling: 'mean', normalize: true });
+    embedding = Array.from(out.data);
+  } else {
+    embedding = spellingEmbed(sentence);   // reuse spellingEmbed
+  }
+
+  // ── 3. Show first 8 numbers of the vector ──
+  const vpEl = document.getElementById('try-own-vector');
+  vpEl.querySelector('.vp-label').textContent =
+    `First 8 of ${embedding.length} numbers in this sentence's vector:`;
+  vpEl.querySelector('.vp-numbers').innerHTML =
+    embedding.slice(0, 8).map(n =>
+      `<span class="vp-num">${n.toFixed(4)}</span>`
+    ).join('') + '<span class="vp-ellipsis">…</span>';
+  vpEl.classList.add('visible');
+
+  // ── 4. Redraw chart: original sentences + new one (reuse draw3DPlot) ──
+  const allSentences  = [...currentSentences, sentence];
+  const allEmbeddings = [...currentEmbeddings, embedding];
+  const highlightIdx  = allSentences.length - 1;
+  const allPoints     = allEmbeddings.map(e => projectTo3D(e));  // reuse projectTo3D
+
+  draw3DPlot(allPoints, allSentences, document.getElementById('chart-area'), highlightIdx);
+
+  // ── 5. Find 3 closest from the existing set (reuse dot) ──
+  const scored = currentEmbeddings.map((e, i) => ({
+    score:    dot(e, embedding),    // reuse dot (cosine sim of unit vectors)
+    sentence: currentSentences[i],
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  const tcEl = document.getElementById('try-own-closest');
+  tcEl.innerHTML =
+    `<p class="toc-label">3 closest existing sentences</p>` +
+    scored.slice(0, 3).map((item, i) => `
+      <div class="toc-row">
+        <span class="toc-rank">${i + 1}</span>
+        <span class="toc-score">${item.score.toFixed(3)}</span>
+        <span class="toc-text">${escapeHtml(item.sentence)}</span>
+      </div>`).join('');
+  tcEl.classList.add('visible');
+
+  console.log(`Stage 7: added "${sentence}" to plot (highlightIdx ${highlightIdx})`);
+});
+
+
+console.log('LLM Pipeline Explorer — Stages 2 · 3 · 4 · 5 · 6 · 7 ready ✅');
+</script>
+
+</body>
+</html>
